@@ -241,8 +241,9 @@ class _PagePenilaianPemainState extends State<PagePenilaianPemain> {
                 },
               ),
               const SizedBox(height: 8),
-              const Divider(thickness: 1),
-              const SizedBox(height: 8),
+              // Divider di bawah dropdown Nama Aspek DIHAPUS SESUAI PERMINTAAN
+              // const Divider(thickness: 1),
+              // const SizedBox(height: 8),
               if (selectedAspek != null && kriteriaList.isNotEmpty)
                 ..._buildAspekInputList(),
               const SizedBox(height: 24),
@@ -346,22 +347,26 @@ class _PagePenilaianPemainState extends State<PagePenilaianPemain> {
     );
   }
 
+  // --- UPDATE: Grid 2x2 Core/Secondary Factor, Judul Aspek Dinamis + Label "Aspek" di kiri (warna sama, tanpa background) dan Divider ---
   List<Widget> _buildAspekInputList() {
-    return [
-      const Text(
-        "Input Nilai Kriteria",
-        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-      ),
-      const SizedBox(height: 8),
-      ...kriteriaList.map((kriteria) {
-        final key = kriteria['kriteria'];
-        final factor = kriteria['targetKriteria'] ?? '';
-        final color = factor.toString().toLowerCase().contains('core') ? Colors.orange : Colors.blue;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              Expanded(
+    // Pisahkan kriteria core dan secondary
+    final core = kriteriaList.where((k) =>
+      (k['targetKriteria'] ?? '').toString().toLowerCase().contains('core')).toList();
+    final secondary = kriteriaList.where((k) =>
+      !(k['targetKriteria'] ?? '').toString().toLowerCase().contains('core')).toList();
+
+    // Helper untuk buat grid row
+    Widget gridRow(List<Map<String, dynamic>> items) {
+      return Row(
+        children: List.generate(2, (i) {
+          if (i < items.length) {
+            final kriteria = items[i];
+            final key = kriteria['kriteria'];
+            final factor = kriteria['targetKriteria'] ?? '';
+            final color = factor.toString().toLowerCase().contains('core') ? Colors.orange : Colors.blue;
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8.0, bottom: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -399,10 +404,46 @@ class _PagePenilaianPemainState extends State<PagePenilaianPemain> {
                   ],
                 ),
               ),
-            ],
+            );
+          } else {
+            // Kosong jika tidak ada kriteria
+            return const Expanded(child: SizedBox());
+          }
+        }),
+      );
+    }
+
+    return [
+      // Header: Label "Aspek" di kiri (tanpa background, warna sama dengan nama aspek), lalu nama aspek di kanan
+      Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(
+              "Aspek",
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.black, // Sama dengan nama aspek
+                fontSize: 16,
+              ),
+            ),
           ),
-        );
-      }).toList(),
+          Expanded(
+            child: Text(
+              selectedAspek ?? "Input Nilai Kriteria",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      // Divider di bawah header aspek
+      const Divider(thickness: 1),
+      const SizedBox(height: 8),
+      if (core.isNotEmpty) gridRow(core.length > 2 ? core.sublist(0, 2) : core),
+      if (core.length > 2) gridRow(core.sublist(2, core.length)),
+      if (secondary.isNotEmpty) gridRow(secondary.length > 2 ? secondary.sublist(0, 2) : secondary),
+      if (secondary.length > 2) gridRow(secondary.sublist(2, secondary.length)),
     ];
   }
 }

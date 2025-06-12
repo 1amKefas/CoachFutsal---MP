@@ -13,7 +13,7 @@ class _AddPlayerPageState extends State<AddPlayerPage> {
   final numberController = TextEditingController();
   String? selectedPosition;
 
-  final List<String> positions = ['KIPER', 'FLANK', 'ANCHOR', 'MIDFIELD'];
+  final List<String> positions = ['KIPER', 'FLANK', 'ANCHOR', 'PIVOT'];
 
   Future<void> _addPlayer() async {
     final name = nameController.text.trim();

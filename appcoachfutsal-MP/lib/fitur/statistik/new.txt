@@ -42,7 +42,6 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
     for (var field in allFields) {
       controllers[field] = TextEditingController(text: '0');
     }
-    _loadJadwalList();
   }
 
   Future<void> _loadPosisi() async {
@@ -69,10 +68,17 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
     });
   }
 
+  // Jadwal hanya untuk pemain terpilih
   Future<void> _loadJadwalList() async {
-    // Ambil semua jadwal unik dari koleksi statistik_pemain
+    if (selectedPlayer == null) {
+      setState(() {
+        jadwalList = [];
+      });
+      return;
+    }
     final snapshot = await FirebaseFirestore.instance
         .collection('statistik_pemain')
+        .where('player', isEqualTo: selectedPlayer)
         .orderBy('jadwal', descending: true)
         .get();
     final jadwalSet = <DateTime>{};
@@ -88,17 +94,20 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
   }
 
   Future<void> _loadStatistikForDetail() async {
-    if (selectedPlayer == null || selectedDateDropdown == null) return;
-    final DateTime? jadwal = jadwalList
-    .cast<DateTime?>()
-    .firstWhere(
-      (dt) => DateFormat('dd MMMM yyyy').format(dt!) == selectedDateDropdown,
-      orElse: () => null,
-    );
+    if (selectedPlayer == null || selectedDateDropdown == null || selectedPosition == null) return;
+    // Cari jadwal yang sesuai
+    DateTime? jadwal;
+    for (final dt in jadwalList) {
+      if (DateFormat('dd MMMM yyyy').format(dt) == selectedDateDropdown) {
+        jadwal = dt;
+        break;
+      }
+    }
     if (jadwal == null) return;
     final snapshot = await FirebaseFirestore.instance
         .collection('statistik_pemain')
         .where('player', isEqualTo: selectedPlayer)
+        .where('position', isEqualTo: selectedPosition)
         .where('jadwal', isEqualTo: Timestamp.fromDate(jadwal))
         .get();
     setState(() {
@@ -135,17 +144,40 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
       );
       return;
     }
-    final data = {
-      'position': selectedPosition,
-      'player': selectedPlayer,
-      'jadwal': Timestamp.fromDate(selectedJadwal!),
-      'createdAt': FieldValue.serverTimestamp(),
-      'statistik': controllers.map((k, v) => MapEntry(k, v.text)),
-    };
-    await FirebaseFirestore.instance.collection('statistik_pemain').add(data);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Statistik berhasil disimpan')),
-    );
+    // Cek apakah sudah ada data untuk kombinasi posisi, pemain, dan jadwal ini
+    final existing = await FirebaseFirestore.instance
+        .collection('statistik_pemain')
+        .where('position', isEqualTo: selectedPosition)
+        .where('player', isEqualTo: selectedPlayer)
+        .where('jadwal', isEqualTo: Timestamp.fromDate(selectedJadwal!))
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      // Update data jika sudah ada
+      await FirebaseFirestore.instance
+          .collection('statistik_pemain')
+          .doc(existing.docs.first.id)
+          .update({
+        'statistik': controllers.map((k, v) => MapEntry(k, v.text)),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Statistik berhasil diupdate')),
+      );
+    } else {
+      // Tambah data baru jika belum ada
+      final data = {
+        'position': selectedPosition,
+        'player': selectedPlayer,
+        'jadwal': Timestamp.fromDate(selectedJadwal!),
+        'createdAt': FieldValue.serverTimestamp(),
+        'statistik': controllers.map((k, v) => MapEntry(k, v.text)),
+      };
+      await FirebaseFirestore.instance.collection('statistik_pemain').add(data);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Statistik berhasil disimpan')),
+      );
+    }
     await _loadJadwalList();
     setState(() {
       // Reset input
@@ -153,6 +185,8 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
         c.text = '0';
       }
       selectedJadwal = null;
+      selectedDateDropdown = null;
+      statistikList = [];
     });
   }
 
@@ -216,6 +250,10 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
                         selectedPosition = newValue;
                         selectedPlayer = null;
                         pemainList = [];
+                        selectedJadwal = null;
+                        selectedDateDropdown = null;
+                        jadwalList = [];
+                        statistikList = [];
                       });
                       await _loadPemain();
                     },
@@ -246,10 +284,15 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
                         child: Text(player),
                       );
                     }).toList(),
-                    onChanged: (String? newValue) {
+                    onChanged: (String? newValue) async {
                       setState(() {
                         selectedPlayer = newValue;
+                        selectedJadwal = null;
+                        selectedDateDropdown = null;
+                        jadwalList = [];
+                        statistikList = [];
                       });
+                      await _loadJadwalList();
                     },
                   ),
                 ),
@@ -555,7 +598,7 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
 
         SizedBox(height: 24),
 
-        // Tampilkan data statistik dari Firestore sesuai jadwal & player
+        // Tampilkan data statistik dari Firestore sesuai jadwal & player & posisi
         statistikList.isEmpty
             ? Center(
                 child: Padding(
@@ -651,26 +694,4 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
       ),
     );
   }
-}
-
-// Contoh penggunaan untuk dimasukkan ke dalam aplikasi yang sudah ada
-class StatistikApp extends StatelessWidget {
-  const StatistikApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Statistik Pemain Futsal',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.white,
-      ),
-      home: StatistikPemainPage(),
-    );
-  }
-}
-
-void main() {
-  runApp(StatistikApp());
 }

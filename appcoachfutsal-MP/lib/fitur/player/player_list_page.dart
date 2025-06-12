@@ -13,7 +13,7 @@ class PlayerListPage extends StatelessWidget {
       'KIPER': Colors.orange,
       'FLANK': Colors.blue,
       'ANCHOR': Colors.pink,
-      'MIDFIELD': Colors.green,
+      'PIVOT': Colors.green,
     };
 
     return Scaffold(
