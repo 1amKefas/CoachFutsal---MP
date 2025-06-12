@@ -1,0 +1,683 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'dart:async'; 
+import 'dart:math';
+
+
+
+class AturJadwalPage extends StatefulWidget {
+  const AturJadwalPage({Key? key}) : super(key: key);
+
+  @override
+  State<AturJadwalPage> createState() => _AturJadwalPageState();
+}
+
+class _AturJadwalPageState extends State<AturJadwalPage> {
+  DateTime? selectedDate;
+  TimeOfDay? selectedTime;
+  TextEditingController lokasiController = TextEditingController();
+
+  String? editingId;
+  List<String> lokasiList = [];
+  String? selectedLokasi;
+  LatLng? pickedLocation;
+
+  String get formattedDate =>
+      selectedDate != null ? DateFormat('dd MMMM yyyy').format(selectedDate!) : 'Isi Tanggal';
+
+  String get formattedTime =>
+      selectedTime != null ? selectedTime!.format(context) : 'Isi waktu';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLokasiList();
+  }
+
+  Future<void> _loadLokasiList() async {
+    final snapshot = await FirebaseFirestore.instance.collection('lokasi').get();
+    setState(() {
+      lokasiList = snapshot.docs.map((e) => e['nama'] as String).toList();
+    });
+  }
+
+  Future<void> _pickDate() async {
+    final DateTime? date = await showDatePicker(
+      context: context,
+      initialDate: selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (date != null) {
+      setState(() {
+        selectedDate = date;
+      });
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final TimeOfDay? time =
+        await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    if (time != null) {
+      setState(() {
+        selectedTime = time;
+      });
+    }
+  }
+
+  Future<void> _isiLokasiDariGPS() async {
+    var status = await Permission.location.request();
+    if (!status.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Izin lokasi diperlukan untuk fitur ini')),
+      );
+      return;
+    }
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('GPS belum aktif')),
+        );
+        return;
+      }
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Izin lokasi ditolak')),
+          );
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Izin lokasi ditolak permanen')),
+        );
+        return;
+      }
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+        String name = [
+          place.name,
+          place.street,
+          place.subLocality,
+          place.locality,
+          place.administrativeArea
+        ].where((e) => e != null && e.isNotEmpty).join(', ');
+        setState(() {
+          lokasiController.text = _shortenPlaceName(name);
+        });
+      } else {
+        setState(() {
+          lokasiController.text =
+              '${position.latitude}, ${position.longitude}';
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal mendapatkan lokasi: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickLocationFromMap() async {
+    MapLocationResult? result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => MapPickerPage()),
+    );
+    if (result != null) {
+      await FirebaseFirestore.instance.collection('lokasi').add({
+        'nama': result.placeName,
+        'lat': result.latLng.latitude,
+        'lng': result.latLng.longitude,
+      });
+      setState(() {
+        pickedLocation = result.latLng;
+        selectedLokasi = result.placeName;
+        lokasiList.add(result.placeName);
+        lokasiController.text = result.placeName;
+      });
+    }
+  }
+
+  Future<void> _tambahAtauUpdateJadwal() async {
+    final lokasiValue = lokasiController.text.isNotEmpty
+        ? lokasiController.text
+        : (selectedLokasi ?? '');
+    if (selectedDate != null && selectedTime != null && lokasiValue.isNotEmpty) {
+      final jadwalData = {
+        'tanggal': selectedDate,
+        'jam': selectedTime!.format(context),
+        'lokasi': lokasiValue,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      if (editingId == null) {
+        await FirebaseFirestore.instance.collection('jadwal').add(jadwalData);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Jadwal berhasil ditambahkan')),
+        );
+      } else {
+        await FirebaseFirestore.instance.collection('jadwal').doc(editingId).update(jadwalData);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Jadwal berhasil diupdate')),
+        );
+        editingId = null;
+      }
+      setState(() {
+        selectedDate = null;
+        selectedTime = null;
+        lokasiController.clear();
+        selectedLokasi = null;
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lengkapi semua data terlebih dahulu')),
+      );
+    }
+  }
+
+  Future<void> _hapusJadwal(String id) async {
+    await FirebaseFirestore.instance.collection('jadwal').doc(id).delete();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Jadwal berhasil dihapus')),
+    );
+  }
+
+  // Tambahkan fungsi untuk menghapus lokasi tersimpan dari Firestore dan list lokal
+  Future<void> _hapusLokasiTersimpan(String namaLokasi) async {
+    // Cari dokumen lokasi berdasarkan nama
+    final snapshot = await FirebaseFirestore.instance
+        .collection('lokasi')
+        .where('nama', isEqualTo: namaLokasi)
+        .get();
+
+    for (var doc in snapshot.docs) {
+      await doc.reference.delete();
+    }
+
+    setState(() {
+      lokasiList.remove(namaLokasi);
+      if (selectedLokasi == namaLokasi) {
+        selectedLokasi = null;
+        lokasiController.clear();
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Lokasi berhasil dihapus')),
+    );
+  }
+
+  void _isiFormDariJadwal(DocumentSnapshot doc) {
+    setState(() {
+      editingId = doc.id;
+      selectedDate = (doc['tanggal'] as Timestamp).toDate();
+      final jamStr = doc['jam'] as String;
+      final jamParts = jamStr.split(':');
+      selectedTime = TimeOfDay(
+        hour: int.parse(jamParts[0]),
+        minute: int.parse(jamParts[1]),
+      );
+      lokasiController.text = doc['lokasi'];
+      selectedLokasi = doc['lokasi'];
+    });
+  }
+
+  String _shortenPlaceName(String name) {
+    List<String> parts = name.split(',');
+    String short = parts.take(2).join(',').trim();
+    if (short.length > 30) {
+      return short.substring(0, 30) + "...";
+    }
+    return short;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ATUR JADWAL', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        leading: const BackButton(),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Tanggal', style: TextStyle(fontWeight: FontWeight.bold)),
+            GestureDetector(
+              onTap: _pickDate,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
+                margin: const EdgeInsets.only(top: 8, bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.teal[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(formattedDate),
+              ),
+            ),
+            const Text('Jam', style: TextStyle(fontWeight: FontWeight.bold)),
+            GestureDetector(
+              onTap: _pickTime,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
+                margin: const EdgeInsets.only(top: 8, bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.teal[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(formattedTime),
+              ),
+            ),
+            const Text('Tempat / Lokasi', style: TextStyle(fontWeight: FontWeight.bold)),
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 8),
+              child: Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _isiLokasiDariGPS,
+                    icon: const Icon(Icons.my_location),
+                    label: const Text('Isi Lokasi Otomatis'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: _pickLocationFromMap,
+                    icon: const Icon(Icons.map),
+                    label: const Text('Pilih di Map'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.teal[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TextFormField(
+                controller: lokasiController,
+                readOnly: true,
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 20),
+                  hintText: 'Masukkan Lokasi',
+                ),
+                style: const TextStyle(
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+           Container(
+              margin: const EdgeInsets.only(bottom: 32),
+              decoration: BoxDecoration(
+                color: Colors.teal[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value: selectedLokasi,
+                      hint: const Text('Pilih Lokasi Tersimpan'),
+                      items: lokasiList
+                          .map((e) => DropdownMenuItem<String>(
+                                value: e,
+                                child: Text(
+                                  _shortenPlaceName(e),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ))
+                          .toList(),
+                      onChanged: (val) {
+                        setState(() {
+                          selectedLokasi = val;
+                          lokasiController.text = val ?? '';
+                        });
+                      },
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 15, vertical: 20),
+                      ),
+                    ),
+                  ),
+                  // Tombol hapus lokasi
+                  if (selectedLokasi != null)
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      tooltip: 'Hapus lokasi ini',
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Hapus Lokasi'),
+                            content: Text('Yakin ingin menghapus lokasi "$selectedLokasi"?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Batal'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true && selectedLokasi != null) {
+                          await _hapusLokasiTersimpan(selectedLokasi!);
+                        }
+                      },
+                    ),
+                ],
+              ),
+            ),
+            Center(
+              child: ElevatedButton(
+                onPressed: _tambahAtauUpdateJadwal,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                child: Text(editingId == null ? 'Tambah Jadwal' : 'Update Jadwal', style: const TextStyle(color: Colors.white)),
+              ),
+            ),
+            const SizedBox(height: 30),
+            const Text('Daftar Jadwal', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance.collection('jadwal').orderBy('tanggal').snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Text('Terjadi error');
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final docs = snapshot.data!.docs;
+                  if (docs.isEmpty) {
+                    return const Text('Belum ada jadwal');
+                  }
+                  return ListView.builder(
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final doc = docs[index];
+                      final tanggal = (doc['tanggal'] as Timestamp).toDate();
+                      final jam = doc['jam'];
+                      final lokasi = doc['lokasi'];
+                      return Card(
+                        child: ListTile(
+                          title: Text('${DateFormat('dd MMM yyyy').format(tanggal)} - $jam'),
+                          subtitle: Text(
+                            _shortenPlaceName(lokasi),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.orange),
+                                onPressed: () => _isiFormDariJadwal(doc),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () => _hapusJadwal(doc.id),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MapLocationResult {
+  final LatLng latLng;
+  final String placeName;
+  MapLocationResult({required this.latLng, required this.placeName});
+}
+
+class MapPickerPage extends StatefulWidget {
+  @override
+  State<MapPickerPage> createState() => _MapPickerPageState();
+}
+
+const String mapboxAccessToken = 'MAPBOX_ACCESS_TOKEN_KAMU'; // Ganti dengan token Mapbox kamu
+
+class _MapPickerPageState extends State<MapPickerPage> {
+  MapboxMapController? mapController;
+  Point picked = Point(coordinates: Position(-6.200000, 106.816666)); // Default Jakarta
+  String placeName = "Pilih lokasi di peta";
+  TextEditingController searchController = TextEditingController();
+  Point? userPoint;
+  late CameraOptions _cameraOptions;
+
+  late PointAnnotationManager _pointAnnotationManager;
+  late PolylineAnnotationManager _polylineAnnotationManager;
+  List<PointAnnotation> _annotations = [];
+  List<PolylineAnnotation> _polylines = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _cameraOptions = CameraOptions(
+      center: picked,
+      zoom: 12,
+    );
+    _setInitialLocation();
+  }
+
+  Future<void> _setInitialLocation() async {
+    try {
+      var status = await Permission.location.request();
+      if (!status.isGranted) return;
+
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final user = Point(coordinates: Position(position.latitude, position.longitude));
+      setState(() {
+        picked = user;
+        userPoint = user;
+        _cameraOptions = CameraOptions(center: user, zoom: 14);
+      });
+      await _updatePlaceName(user);
+      if (mapController != null) {
+        mapController!.flyTo(_cameraOptions, MapAnimationOptions(duration: 1000));
+      }
+      _addMarker(user);
+    } catch (_) {
+      // Biarkan default Jakarta jika gagal
+      _addMarker(picked);
+    }
+  }
+
+  Future<void> _updatePlaceName(Point point) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        point.coordinates.lat,
+        point.coordinates.lng,
+      );
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        String name = [
+          p.name,
+          p.street,
+          p.subLocality,
+          p.locality,
+          p.administrativeArea
+        ].where((e) => e != null && e.isNotEmpty).join(', ');
+        setState(() {
+          placeName = name.length > 40 ? name.substring(0, 40) + "..." : name;
+        });
+      } else {
+        setState(() {
+          placeName = "${point.coordinates.lat}, ${point.coordinates.lng}";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        placeName = "${point.coordinates.lat}, ${point.coordinates.lng}";
+      });
+    }
+  }
+
+  Future<void> _addMarker(Point point) async {
+    if (_pointAnnotationManager == null) return;
+    await _pointAnnotationManager.deleteAll();
+    final annotation = await _pointAnnotationManager.create(PointAnnotationOptions(
+      geometry: point,
+      iconImage: "marker-15", // Gunakan icon default Mapbox, atau ganti asset sendiri
+      iconSize: 2.0,
+    ));
+    setState(() {
+      _annotations = [annotation];
+    });
+  }
+
+  Future<void> _drawRoute(Point destination) async {
+    if (userPoint == null) return;
+    // Mapbox Directions API (harus pakai HTTP request)
+    final url =
+        'https://api.mapbox.com/directions/v5/mapbox/driving/${userPoint!.coordinates.lng},${userPoint!.coordinates.lat};${destination.coordinates.lng},${destination.coordinates.lat}?geometries=geojson&access_token=$mapboxAccessToken';
+    final response = await Uri.parse(url).resolveUri(Uri());
+    final res = await Future.delayed(Duration(milliseconds: 1)); // Dummy, ganti dengan http.get
+    // Untuk demo, tidak fetch polyline sungguhan. Implementasi asli: gunakan package http dan decode polyline dari response.
+    // Lihat dokumentasi Mapbox Directions API untuk implementasi asli.
+    // Di sini, hanya hapus polyline lama.
+    await _polylineAnnotationManager.deleteAll();
+    setState(() {
+      _polylines = [];
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Pilih Lokasi di Map')),
+      body: Stack(
+        children: [
+          MapWidget(
+            key: const ValueKey('mapbox_map'),
+            resourceOptions: ResourceOptions(accessToken: mapboxAccessToken),
+            cameraOptions: _cameraOptions,
+            onMapCreated: (controller) async {
+              mapController = controller;
+              _pointAnnotationManager = await controller.createPointAnnotationManager();
+              _polylineAnnotationManager = await controller.createPolylineAnnotationManager();
+              _addMarker(picked);
+            },
+            onTapListener: (point, screenPoint) async {
+              setState(() {
+                picked = point;
+              });
+              await _updatePlaceName(point);
+              await _addMarker(point);
+              await _drawRoute(point);
+            },
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 16,
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    placeName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.95),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: TextField(
+                    controller: searchController,
+                    decoration: const InputDecoration(
+                      hintText: 'Cari lokasi (fitur pencarian manual Mapbox belum tersedia)',
+                      border: InputBorder.none,
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    readOnly: true, // Mapbox tidak punya autocomplete gratis
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.pop(
+            context,
+            MapLocationResult(
+              latLng: LatLng(picked.coordinates.lat, picked.coordinates.lng),
+              placeName: placeName,
+            ),
+          );
+        },
+        icon: const Icon(Icons.check),
+        label: const Text('Pilih Lokasi'),
+      ),
+    );
+  }
+}
