@@ -90,11 +90,11 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
   Future<void> _loadStatistikForDetail() async {
     if (selectedPlayer == null || selectedDateDropdown == null) return;
     final DateTime? jadwal = jadwalList
-    .cast<DateTime?>()
-    .firstWhere(
-      (dt) => DateFormat('dd MMMM yyyy').format(dt!) == selectedDateDropdown,
-      orElse: () => null,
-    );
+        .cast<DateTime?>()
+        .firstWhere(
+          (dt) => DateFormat('dd MMMM yyyy').format(dt!) == selectedDateDropdown,
+          orElse: () => null,
+        );
     if (jadwal == null) return;
     final snapshot = await FirebaseFirestore.instance
         .collection('statistik_pemain')
@@ -511,12 +511,109 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
     );
   }
 
+  // Tambahkan fungsi untuk membuat BarChart
+  Widget buildBarChart(Map<String, dynamic> statistik, List<String> fields, String title) {
+    final barValues = <double>[];
+    final barLabels = <String>[];
+    for (final field in fields) {
+      final value = double.tryParse(statistik[field]?.toString() ?? '0') ?? 0;
+      barValues.add(value);
+      barLabels.add(field);
+    }
+
+    if (barValues.every((v) => v == 0)) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12.0),
+        child: Text(
+          'Belum ada data grafik $title.',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 180,
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: (barValues.isNotEmpty) ? (barValues.reduce((a, b) => a > b ? a : b) + 2) : 10,
+          barTouchData: BarTouchData(enabled: true),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 18, // diperkecil dari 28
+                getTitlesWidget: (double value, TitleMeta meta) {
+                  return Text(
+                    value.toInt().toString(),
+                    style: const TextStyle(fontSize: 10), // font lebih kecil
+                  );
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (double value, TitleMeta meta) {
+                  final idx = value.toInt();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      idx >= 0 && idx < barLabels.length
+                          ? barLabels[idx]
+                          : '',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  );
+                },
+                interval: 1,
+              ),
+            ),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups: List.generate(barValues.length, (i) {
+            return BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: barValues[i],
+                  color: Colors.blueAccent,
+                  width: 18,
+                  borderRadius: BorderRadius.circular(6),
+                  backDrawRodData: BackgroundBarChartRodData(
+                    show: true,
+                    toY: (barValues.reduce((a, b) => a > b ? a : b) + 2),
+                    color: Colors.blue[50]!,
+                  ),
+                ),
+              ],
+            );
+          }),
+          gridData: FlGridData(show: false),
+        ),
+      ),
+    );
+  }
+
   // Helper widget untuk membuat tampilan detail statistik
   Widget detailStatistikView(String category) {
     // Dropdown jadwal pertandingan
     final jadwalDropdownItems = jadwalList
         .map((dt) => DateFormat('dd MMMM yyyy').format(dt))
         .toList();
+
+    // Field mapping
+    final Map<String, List<String>> kategoriFieldsMap = {
+      "Attack": ["finishing", "shooting", "ballControl", "crossing"],
+      "Defence": ["bodyBalance", "intersepi", "aggression", "composure"],
+    };
+    final fields = kategoriFieldsMap[category] ?? [];
+
+    // Ambil data statistik pertama untuk chart (atau kosong)
+    final Map<String, dynamic> statistikForChart =
+        statistikList.isNotEmpty ? (statistikList.first['statistik'] ?? {}) : {};
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -555,6 +652,10 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
 
         SizedBox(height: 24),
 
+        // Bar Chart
+        if (fields.isNotEmpty)
+          buildBarChart(statistikForChart, fields, category),
+
         // Tampilkan data statistik dari Firestore sesuai jadwal & player
         statistikList.isEmpty
             ? Center(
@@ -573,12 +674,7 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
                 itemBuilder: (context, idx) {
                   final stat = statistikList[idx];
                   final Map<String, dynamic> statistik = stat['statistik'] ?? {};
-                  // Filter statistik sesuai kategori
-                  final Map<String, String> kategoriMap = {
-                    "Attack": "finishing,shooting,ballControl,crossing",
-                    "Defence": "bodyBalance,intersepi,aggression,composure",
-                  };
-                  final kategoriFields = kategoriMap[category]?.split(',') ?? [];
+                  final kategoriFields = fields;
                   return Card(
                     margin: EdgeInsets.only(bottom: 12),
                     child: Padding(
@@ -651,26 +747,4 @@ class _StatistikPemainPageState extends State<StatistikPemainPage> {
       ),
     );
   }
-}
-
-// Contoh penggunaan untuk dimasukkan ke dalam aplikasi yang sudah ada
-class StatistikApp extends StatelessWidget {
-  const StatistikApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Statistik Pemain Futsal',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.white,
-      ),
-      home: StatistikPemainPage(),
-    );
-  }
-}
-
-void main() {
-  runApp(StatistikApp());
 }

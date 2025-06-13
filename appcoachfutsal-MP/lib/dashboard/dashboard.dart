@@ -18,7 +18,6 @@ import 'package:appcoachfutsal/fitur/lineup/LineUp_page.dart';
 import 'package:appcoachfutsal/fitur/statistik/statistic_pemain.dart';
 import 'package:appcoachfutsal/fitur/jadwal/atur_jadwal_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
- // harus sesuai file dari flutterfire configure
 
 Future<String> getUserName() async {
   final user = FirebaseAuth.instance.currentUser;
@@ -39,6 +38,17 @@ String _bulanIndo(int bulan) {
   return bulanIndo[bulan];
 }
 
+// Fungsi utilitas untuk mempersingkat nama lokasi
+String _shortenLocation(String location, {int maxLength = 24}) {
+  if (location.length <= maxLength) return location;
+  List<String> parts = location.split(',');
+  String short = parts.take(2).join(',').trim();
+  if (short.length > maxLength) {
+    short = short.substring(0, maxLength);
+  }
+  return short + "...";
+}
+
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
 
@@ -47,123 +57,134 @@ class DashboardPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: FutureBuilder<String>(
-                        future: getUserName(),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight,
+                ),
+                child: IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: FutureBuilder<String>(
+                            future: getUserName(),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return Text('Hello,\nLoading...', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold));
+                              } else if (snapshot.hasError) {
+                                return Text('Hello,\nError', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold));
+                              } else {
+                                return Text(
+                                  'Hello,\n${snapshot.data}',
+                                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                                );
+                              }
+                            },
+                          )
+                      ),
+
+                      // Carousel Section
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 12),
+                        child: SizedBox(
+                          height: 180,
+                          child: _DashboardCarousel(),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Fitur section
+                      sectionTitle('Fitur'),
+                      const SizedBox(height: 12),
+
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: SizedBox(
+                          height: 90,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            children: [
+                              fiturCard(Icons.calendar_month, 'Atur Jadwal', context),
+                              fiturCard(Icons.person_2, 'Data Pemain', context),
+                              fiturCard(Icons.track_changes, 'Data Aspek', context),
+                              fiturCard(Icons.sports_soccer, 'Data Kriteria', context),
+                              fiturCard(Icons.fact_check, 'Penilaian', context),
+                              fiturCard(Icons.stacked_bar_chart, 'Statistik', context),
+                              fiturCard(Icons.person, 'Profile', context),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Statistik Section
+                      sectionTitle('Statistik'),
+                      const SizedBox(height: 12),
+                      buildStatistikSection(),
+
+                      const SizedBox(height: 20),
+
+                      // Jadwal section
+                      sectionTitle('Jadwal'),
+                      const SizedBox(height: 12),
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance.collection('jadwal').orderBy('tanggal').snapshots(),
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return Text('Hello,\nLoading...', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold));
-                          } else if (snapshot.hasError) {
-                            return Text('Hello,\nError', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold));
-                          } else {
-                            return Text(
-                              'Hello,\n${snapshot.data}',
-                              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                          if (snapshot.hasError) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 16.0),
+                              child: Text('Terjadi error saat mengambil jadwal'),
                             );
                           }
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          final docs = snapshot.data?.docs ?? [];
+                          if (docs.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 16.0),
+                              child: Text('Belum ada jadwal'),
+                            );
+                          }
+                          return Column(
+                            children: docs.map((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              final tanggal = (data['tanggal'] as Timestamp).toDate();
+                              final jam = data['jam'] ?? '';
+                              final lokasi = data['lokasi'] ?? '';
+                              final status = data['status'] ?? 'belum'; // default 'belum'
+                              return JadwalCardInteractive(
+                                id: doc.id,
+                                title: 'Latihan',
+                                date: '${tanggal.day.toString().padLeft(2, '0')} ${_bulanIndo(tanggal.month)}, ${tanggal.year}',
+                                time: jam,
+                                location: lokasi,
+                                status: status,
+                              );
+                            }).toList(),
+                          );
                         },
-                      )
-              ),
+                      ),
 
-              // Profile singkat
-              buildProfileSection(),
-
-              // Carousel Section
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 12),
-                child: SizedBox(
-                  height: 180,
-                  child: _DashboardCarousel(),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Fitur section
-              sectionTitle('Fitur'),
-              const SizedBox(height: 12),
-
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: SizedBox(
-                  height: 90,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      fiturCard(Icons.calendar_month, 'Atur Jadwal', context),
-                      fiturCard(Icons.person_2, 'Data Pemain', context),
-                      fiturCard(Icons.track_changes, 'Data Aspek', context),
-                      fiturCard(Icons.sports_soccer, 'Data Kriteria', context),
-                      fiturCard(Icons.fact_check, 'Penilaian', context),
-                      fiturCard(Icons.stacked_bar_chart, 'Statistik', context),
-                      fiturCard(Icons.person, 'Profile', context),
+                      // Kurangi tinggi agar tidak overflow
+                      const SizedBox(height: 24),
                     ],
                   ),
                 ),
               ),
-
-              const SizedBox(height: 20),
-
-              // Statistik Section
-              sectionTitle('Statistik'),
-              const SizedBox(height: 12),
-              buildStatistikSection(),
-
-              const SizedBox(height: 20),
-
-              // Jadwal section
-              sectionTitle('Jadwal'),
-              const SizedBox(height: 12),
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('jadwal').orderBy('tanggal').snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Text('Terjadi error saat mengambil jadwal'),
-                    );
-                  }
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final docs = snapshot.data?.docs ?? [];
-                  if (docs.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Text('Belum ada jadwal'),
-                    );
-                  }
-                  return Column(
-                    children: docs.map((doc) {
-                      final data = doc.data() as Map<String, dynamic>;
-                      final tanggal = (data['tanggal'] as Timestamp).toDate();
-                      final jam = data['jam'] ?? '';
-                      final lokasi = data['lokasi'] ?? '';
-                      return jadwalCard(
-                        'Latihan',
-                        // Format tanggal
-                        '${tanggal.day.toString().padLeft(2, '0')} ${_bulanIndo(tanggal.month)}, ${tanggal.year}',
-                        jam,
-                        lokasi,
-                      );
-                    }).toList(),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 80),
-            ],
-          ),
+            );
+          },
         ),
       ),
 
-     floatingActionButton: Container(
+      floatingActionButton: Container(
         width: MediaQuery.of(context).size.width * 0.9,
         height: 70,
         decoration: BoxDecoration(
@@ -178,8 +199,8 @@ class DashboardPage extends StatelessWidget {
             }),
             bottomNavItem(Icons.group, 'Pemain', () {
               Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => PlayerListPage())
+                  context,
+                  MaterialPageRoute(builder: (context) => PlayerListPage())
               );
             }),
             bottomNavItem(Icons.format_list_bulleted, 'Line Up', () {
@@ -228,11 +249,11 @@ class DashboardPage extends StatelessWidget {
       onTap: () {
         if (label == 'Data Pemain') {
           Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PlayerListPage(),
-          ),
-        );
+            context,
+            MaterialPageRoute(
+              builder: (_) => PlayerListPage(),
+            ),
+          );
         }
 
         // Update Page Profile
@@ -284,7 +305,6 @@ class DashboardPage extends StatelessWidget {
           );
         }
 
-        // bisa tambahin else if lainnya kalau ada fitur lain
         else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Fitur "$label" belum tersedia')),
@@ -325,48 +345,6 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
- Widget jadwalCard(String title, String date, String time, String location) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6),
-    child: Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.sports, size: 20),
-                SizedBox(width: 8),
-                Text(title, style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.calendar_today, size: 16),
-                SizedBox(width: 6),
-                Text('$date\n$time'),
-                Spacer(),
-                Row(
-                  children: [
-                    Icon(Icons.location_on, size: 16),
-                    SizedBox(width: 4),
-                    Text(location, textAlign: TextAlign.right),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
   Widget bottomNavItem(IconData icon, String label, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
@@ -380,28 +358,7 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  Widget buildProfileSection() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: Colors.blueAccent,
-            child: Icon(Icons.person, color: Colors.white),
-          ),
-          SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Kefas Hutabarat', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('Manajer Tim', style: TextStyle(color: Colors.grey[600])),
-            ],
-          )
-        ],
-      ),
-    );
-  }
+  // buildProfileSection() DIHAPUS
 
   Widget buildStatistikSection() {
     return SizedBox(
@@ -411,10 +368,52 @@ class DashboardPage extends StatelessWidget {
         physics: BouncingScrollPhysics(),
         padding: EdgeInsets.symmetric(horizontal: 8),
         children: [
-          statistikCard('Total Pemain', '15'),
+          // Total Pemain - real-time dari Firestore
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('players').snapshots(),
+            builder: (context, snapshot) {
+              int total = 0;
+              if (snapshot.hasData) {
+                total = snapshot.data!.docs.length;
+              }
+              return statistikCard('Total Pemain', total.toString());
+            },
+          ),
           statistikCard('Line Up', '5'),
-          statistikCard('Latihan Selesai', '12'),
-          statistikCard('Penilaian', '27'),
+          // Latihan Selesai dinamis
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('jadwal')
+                .where('status', isEqualTo: 'selesai')
+                .snapshots(),
+            builder: (context, snapshot) {
+              int selesai = 0;
+              if (snapshot.hasData) {
+                selesai = snapshot.data!.docs.length;
+              }
+              return statistikCard('Latihan Selesai', selesai.toString());
+            },
+          ),
+          // Penilaian: jumlah pemain unik yang sudah dinilai
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('penilaian').snapshots(),
+            builder: (context, snapshot) {
+              int totalPemainDinilai = 0;
+              if (snapshot.hasData) {
+                final docs = snapshot.data!.docs;
+                final pemainSet = <String>{};
+                for (var doc in docs) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final pemain = data['pemain'];
+                  if (pemain != null && pemain.toString().isNotEmpty) {
+                    pemainSet.add(pemain.toString());
+                  }
+                }
+                totalPemainDinilai = pemainSet.length;
+              }
+              return statistikCard('Penilaian', totalPemainDinilai.toString());
+            },
+          ),
         ],
       ),
     );
@@ -442,6 +441,119 @@ class DashboardPage extends StatelessWidget {
   }
 }
 
+// JadwalCardInteractive: Card Jadwal yang bisa diklik dan ada tombol Latihan Selesai
+class JadwalCardInteractive extends StatelessWidget {
+  final String id;
+  final String title;
+  final String date;
+  final String time;
+  final String location;
+  final String status;
+
+  const JadwalCardInteractive({
+    Key? key,
+    required this.id,
+    required this.title,
+    required this.date,
+    required this.time,
+    required this.location,
+    required this.status,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6),
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 3,
+        child: InkWell(
+          onTap: () {
+            if (status != 'selesai') {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: Text('Latihan Selesai?'),
+                  content: Text('Tandai jadwal ini sebagai latihan selesai?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text('Batal'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await FirebaseFirestore.instance
+                            .collection('jadwal')
+                            .doc(id)
+                            .update({'status': 'selesai'});
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Latihan ditandai selesai!')),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                      child: Text('Latihan Selesai'),
+                    ),
+                  ],
+                ),
+              );
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.sports, size: 20),
+                    SizedBox(width: 8),
+                    Text(title, style: TextStyle(fontWeight: FontWeight.bold)),
+                    if (status == 'selesai')
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8.0),
+                        child: Chip(
+                          label: Text('Selesai', style: TextStyle(color: Colors.white)),
+                          backgroundColor: Colors.green,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.calendar_today, size: 16),
+                    SizedBox(width: 6),
+                    Text('$date\n$time'),
+                    Spacer(),
+                    Row(
+                      children: [
+                        Icon(Icons.location_on, size: 16, color: Colors.red,),
+                        SizedBox(width: 4),
+                        Container(
+                          constraints: BoxConstraints(maxWidth: 120),
+                          child: Text(
+                            _shortenLocation(location),
+                            textAlign: TextAlign.right,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // Carousel Widget
 class _DashboardCarousel extends StatefulWidget {
   @override
@@ -462,39 +574,62 @@ class _DashboardCarouselState extends State<_DashboardCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    return PageView.builder(
-      controller: _controller,
-      itemCount: images.length,
-      onPageChanged: (index) {
-        setState(() {
-          _currentPage = index;
-        });
-      },
-      itemBuilder: (context, index) {
-        final isCurrent = index == _currentPage;
-        final scale = isCurrent ? 1.0 : 0.8;
-        final opacity = isCurrent ? 1.0 : 0.7;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.ease,
-          padding: EdgeInsets.symmetric(vertical: isCurrent ? 0 : 16, horizontal: 8),
-          child: Transform.scale(
-            scale: scale,
-            child: Opacity(
-              opacity: opacity,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Image.asset(
-                  images[index],
-                  fit: BoxFit.cover,
-                  height: 180,
-                  width: double.infinity,
+    return Column(
+      children: [
+        SizedBox(
+          height: 180,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: images.length,
+            onPageChanged: (index) {
+              setState(() {
+                _currentPage = index;
+              });
+            },
+            itemBuilder: (context, index) {
+              final isCurrent = index == _currentPage;
+              final scale = isCurrent ? 1.0 : 0.8;
+              final opacity = isCurrent ? 1.0 : 0.7;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.ease,
+                padding: EdgeInsets.symmetric(vertical: isCurrent ? 0 : 16, horizontal: 8),
+                child: Transform.scale(
+                  scale: scale,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Image.asset(
+                        images[index],
+                        fit: BoxFit.cover,
+                        height: 180,
+                        width: double.infinity,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
-        );
-      },
+        ),
+        const SizedBox(),
+        // Dot indicator (hanya 3 titik)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(3, (dotIndex) {
+            bool isActive = _currentPage == dotIndex;
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              width: isActive ? 14 : 8,
+              decoration: BoxDecoration(
+                color: isActive ? Colors.orange : Colors.grey[300],
+                borderRadius: BorderRadius.circular(8),
+              ),
+            );
+          }),
+        ),
+      ],
     );
   }
 }

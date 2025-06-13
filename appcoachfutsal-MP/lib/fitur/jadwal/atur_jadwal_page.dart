@@ -265,30 +265,42 @@ class _AturJadwalPageState extends State<AturJadwalPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Tanggal', style: TextStyle(fontWeight: FontWeight.bold)),
-            GestureDetector(
-              onTap: _pickDate,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
-                margin: const EdgeInsets.only(top: 8, bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.teal[50],
-                  borderRadius: BorderRadius.circular(8),
+           const Text('Tanggal', style: TextStyle(fontWeight: FontWeight.bold)),
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 8, bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.teal[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: GestureDetector(
+                onTap: _pickDate,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
+                  child: Text(
+                    formattedDate,
+                    style: const TextStyle(fontSize: 16),
+                  ),
                 ),
-                child: Text(formattedDate),
               ),
             ),
             const Text('Jam', style: TextStyle(fontWeight: FontWeight.bold)),
-            GestureDetector(
-              onTap: _pickTime,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
-                margin: const EdgeInsets.only(top: 8, bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.teal[50],
-                  borderRadius: BorderRadius.circular(8),
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 8, bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.teal[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: GestureDetector(
+                onTap: _pickTime,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 20),
+                  child: Text(
+                    formattedTime,
+                    style: const TextStyle(fontSize: 16),
+                  ),
                 ),
-                child: Text(formattedTime),
               ),
             ),
             const Text('Tempat / Lokasi', style: TextStyle(fontWeight: FontWeight.bold)),
