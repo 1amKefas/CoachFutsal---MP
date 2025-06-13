@@ -4,16 +4,9 @@ import 'package:appcoachfutsal/fitur/kriteria/list_kriteria.dart';
 import 'dart:async';
 import 'package:appcoachfutsal/fitur/player/player_list_page.dart';
 import 'package:appcoachfutsal/SplashScreen/splash2.dart';
-
-// Update Page Profile
 import 'package:appcoachfutsal/fitur/profile/profile_page.dart';
-
-// Update Aspek Penilaian Page
 import 'package:appcoachfutsal/fitur/aspek/aspek_penilaian_page.dart';
-
-// Update Hasil Penilaian Page
 import 'package:appcoachfutsal/fitur/penilaian/hasil_penilaian_page.dart';
-
 import 'package:appcoachfutsal/fitur/lineup/LineUp_page.dart';
 import 'package:appcoachfutsal/fitur/statistik/statistic_pemain.dart';
 import 'package:appcoachfutsal/fitur/jadwal/atur_jadwal_page.dart';
@@ -38,7 +31,6 @@ String _bulanIndo(int bulan) {
   return bulanIndo[bulan];
 }
 
-// Fungsi utilitas untuk mempersingkat nama lokasi
 String _shortenLocation(String location, {int maxLength = 24}) {
   if (location.length <= maxLength) return location;
   List<String> parts = location.split(',');
@@ -49,8 +41,15 @@ String _shortenLocation(String location, {int maxLength = 24}) {
   return short + "...";
 }
 
-class DashboardPage extends StatelessWidget {
+class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  bool _isMinimized = false;
 
   @override
   Widget build(BuildContext context) {
@@ -184,65 +183,73 @@ class DashboardPage extends StatelessWidget {
         ),
       ),
 
-      floatingActionButton: Container(
-        width: MediaQuery.of(context).size.width * 0.9,
-        height: 70,
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20), bottom: Radius.circular(20)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            bottomNavItem(Icons.home, 'Home', () {
-              // navigasi ke halaman Home
-            }),
-            bottomNavItem(Icons.group, 'Pemain', () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => PlayerListPage())
-              );
-            }),
-            bottomNavItem(Icons.format_list_bulleted, 'Line Up', () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => LineUpPage()),
-              );
-            }),
-            bottomNavItem(Icons.logout, 'Logout', () async {
-              await FirebaseAuth.instance.signOut();
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => WelcomeScreen()),
-              );
-            })
-          ],
-        ),
+      floatingActionButton: _MinimizableFloatingButton(
+        isMinimized: _isMinimized,
+        onMinimize: () => setState(() => _isMinimized = true),
+        onExpand: () => setState(() => _isMinimized = false),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
+ // ... (imports and other code remain unchanged)
+
+  // Ganti fungsi sectionTitle di dalam _DashboardPageState:
+// Ganti fungsi sectionTitle di dalam _DashboardPageState:
   Widget sectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.orange[300],
-              borderRadius: BorderRadius.circular(4),
-            ),
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 100),
+          decoration: BoxDecoration(
+            color: Colors.orange[100], // Ganti sesuai selera
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.orangeAccent.withOpacity(0.15),
+                blurRadius: 8,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Center(
             child: Text(
               title,
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+                color: Colors.black,
+                letterSpacing: 1.1,
+                fontFamily: 'Poppins',
+              ),
+              textAlign: TextAlign.center,
             ),
           ),
-        ],
-      ),
+        ),
+        // Tambahkan jarak antara judul dan divider
+        const SizedBox(height: 8),
+        // Divider modern full width
+        PhysicalModel(
+          color: Colors.transparent,
+          elevation: 8,
+          borderRadius: BorderRadius.circular(50),
+          shadowColor: Colors.black87,
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            height: 5,
+            decoration: BoxDecoration(
+              color: Colors.blueGrey,
+              borderRadius: BorderRadius.circular(50),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
+  // ... (rest of the code remains unchanged)
 
   Widget fiturCard(IconData icon, String label, BuildContext context) {
     return InkWell(
@@ -357,8 +364,6 @@ class DashboardPage extends StatelessWidget {
       ),
     );
   }
-
-  // buildProfileSection() DIHAPUS
 
   Widget buildStatistikSection() {
     return SizedBox(
@@ -630,6 +635,123 @@ class _DashboardCarouselState extends State<_DashboardCarousel> {
           }),
         ),
       ],
+    );
+  }
+}
+
+/// Custom floating button yang bisa minimize/expand
+class _MinimizableFloatingButton extends StatelessWidget {
+  final bool isMinimized;
+  final VoidCallback onMinimize;
+  final VoidCallback onExpand;
+
+  const _MinimizableFloatingButton({
+    required this.isMinimized,
+    required this.onMinimize,
+    required this.onExpand,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isMinimized) {
+      // Tombol bulat kecil di kanan bawah
+      return Align(
+        alignment: Alignment.bottomRight,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 24.0, right: 16.0),
+          child: GestureDetector(
+            onTap: onExpand,
+            child: AnimatedContainer(
+              duration: Duration(milliseconds: 300),
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 8,
+                    offset: Offset(2, 2),
+                  ),
+                ],
+              ),
+              child: Icon(Icons.menu, color: Colors.white, size: 32),
+            ),
+          ),
+        ),
+      );
+    } else {
+      // Floating bar seperti sebelumnya, dengan tombol minimize di kanan
+      return Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: 70,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20), bottom: Radius.circular(20)),
+        ),
+        child: Stack(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _NavItem(icon: Icons.home, label: 'Home', onTap: () {}),
+                _NavItem(icon: Icons.group, label: 'Pemain', onTap: () {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => PlayerListPage())
+                  );
+                }),
+                _NavItem(icon: Icons.format_list_bulleted, label: 'Line Up', onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => LineUpPage()),
+                  );
+                }),
+                _NavItem(icon: Icons.logout, label: 'Logout', onTap: () async {
+                  await FirebaseAuth.instance.signOut();
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => WelcomeScreen()),
+                  );
+                }),
+              ],
+            ),
+            // Tombol minimize di pojok kanan
+            Positioned(
+              right: 0,
+              top: 0,
+              child: IconButton(
+                icon: Icon(Icons.close, color: Colors.white),
+                onPressed: onMinimize,
+                tooltip: 'Minimize',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _NavItem({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.white),
+          Text(label, style: TextStyle(color: Colors.white, fontSize: 12)),
+        ],
+      ),
     );
   }
 }
